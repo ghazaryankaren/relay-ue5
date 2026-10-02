@@ -1,0 +1,25 @@
+# Unreal build output and caches
+/Binaries/
+/Intermediate/
+/Saved/
+/DerivedDataCache/
+Plugins/**/Binaries/
+Plugins/**/Intermediate/
+Plugins/Developer/RiderLink/
+
+# Per-user editor content
+/Content/Developers/
+
+# IDE and generated project files
+.vs/
+.idea/
+.vscode/
+*.sln
+*.slnx
+*.suo
+*.user
+*.DotSettings.user
+*.VC.db
+*.opendb
+*.code-workspace
+.vsconfig
