@@ -1,7 +1,7 @@
 using UnrealBuildTool;
 
 // Весь UI проекта. Модуль ClientOnly: выделенный сервер его не собирает и не грузит.
-// Зависимость от игрового модуля возможна только в эту сторону: Relay про UI не знает.
+// Зависимость от игрового модуля только в эту сторону: Relay про UI не знает.
 public class RelayUI : ModuleRules
 {
 	public RelayUI(ReadOnlyTargetRules Target) : base(Target)
@@ -24,6 +24,7 @@ public class RelayUI : ModuleRules
 			"CommonInput",        // режимы ввода Menu / Game
 			"DeveloperSettings",  // URelayUISettings в Project Settings
 			"EnhancedInput",      // контекст IMC_UI и действия горячих клавиш экранов
+			"Relay",              // кошелёк, каталог магазина и настройки игры
 			"Slate",              // событие смены фокуса и предпроцессор ввода
 			"SlateCore"
 		});

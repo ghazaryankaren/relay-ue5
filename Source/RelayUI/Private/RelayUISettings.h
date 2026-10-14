@@ -34,4 +34,20 @@ public:
 	/** Priority of the UI mapping context. Higher than game contexts, so UI keys win. */
 	UPROPERTY(Config, EditAnywhere, Category = "Input")
 	int32 UIMappingContextPriority = 100;
+
+	/** At most this many toasts are on screen at once. The rest wait in the queue. */
+	UPROPERTY(Config, EditAnywhere, Category = "Toasts", meta = (ClampMin = 1))
+	int32 MaxVisibleToasts = 3;
+
+	/** Length limit of the waiting queue. When it is full, the oldest waiting toast is dropped. */
+	UPROPERTY(Config, EditAnywhere, Category = "Toasts", meta = (ClampMin = 0))
+	int32 MaxQueuedToasts = 8;
+
+	/** Seconds of real time a toast stays on screen. */
+	UPROPERTY(Config, EditAnywhere, Category = "Toasts", meta = (ClampMin = 0.5))
+	float ToastDuration = 3.f;
+
+	/** Languages the settings screen offers, as culture codes. The first one is the native language of the texts. */
+	UPROPERTY(Config, EditAnywhere, Category = "Localization")
+	TArray<FString> SupportedCultures = { TEXT("en"), TEXT("ru") };
 };

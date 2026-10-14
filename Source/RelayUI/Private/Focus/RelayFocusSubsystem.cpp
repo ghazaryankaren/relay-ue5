@@ -1,9 +1,11 @@
 #include "Focus/RelayFocusSubsystem.h"
 
+#include "CommonActivatableWidget.h"
 #include "Engine/LocalPlayer.h"
 #include "Focus/RelayPointerMotionTracker.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Input/CommonUIActionRouterBase.h"
+#include "RelayUILog.h"
 
 void URelayFocusSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -63,6 +65,37 @@ bool URelayFocusSubsystem::HasPointerMovedThisFrame() const
 	return PointerMotionTracker && ActionRouter && PointerMotionTracker->HasMovedThisFrame(ActionRouter->GetLocalPlayerIndex());
 }
 
+bool URelayFocusSubsystem::IsInActiveScreen(const UWidget& Widget) const
+{
+	const UCommonUIActionRouterBase* ActionRouter = ULocalPlayer::GetSubsystem<UCommonUIActionRouterBase>(GetLocalPlayer());
+	return ActionRouter && ActionRouter->IsWidgetInLeafmostNodeHierarchy(Widget);
+}
+
+void URelayFocusSubsystem::KeepFocusInActiveScreen() const
+{
+	UCommonUIActionRouterBase* ActionRouter = ULocalPlayer::GetSubsystem<UCommonUIActionRouterBase>(GetLocalPlayer());
+	if (!ActionRouter || !FSlateApplication::IsInitialized())
+	{
+		return;
+	}
+
+	// Фокус на вьюпорте игры или вне экранов CommonUI нас не касается
+	const TSharedPtr<SWidget> FocusedWidget = FSlateApplication::Get().GetUserFocusedWidget(ActionRouter->GetLocalPlayerIndex());
+	UCommonActivatableWidget* FocusedScreen = FocusedWidget ? UCommonUIActionRouterBase::FindActivatable(FocusedWidget, GetLocalPlayer()) : nullptr;
+	UCommonActivatableWidget* ActiveScreen = ActionRouter->GetLeafmostActivatableWidget();
+	if (!FocusedScreen || !ActiveScreen || FocusedScreen == ActiveScreen)
+	{
+		return;
+	}
+
+	// Фокус оказался на экране, который сейчас не принимает ввод, например на магазине под диалогом.
+	// Так бывает, когда отложенная передача фокуса запланирована до открытия диалога, а выполнилась после:
+	// дальше стрелки водили фокус по магазину, а A открывала второй диалог. Строки магазина это уже проверяют сами,
+	// здесь подстраховка для остальных виджетов. Возвращаем фокус активному экрану
+	UE_LOG(LogRelayUI, Log, TEXT("Focus moved to %s, which does not take input now. Returning it to %s."), *FocusedScreen->GetName(), *ActiveScreen->GetName());
+	ActionRouter->RefreshActiveRootFocus();
+}
+
 void URelayFocusSubsystem::HandleSlateFocusChanging(const FFocusEvent& FocusEvent, const FWeakWidgetPath& OldFocusedWidgetPath, const TSharedPtr<SWidget>& OldFocusedWidget, const FWidgetPath& NewFocusedWidgetPath, const TSharedPtr<SWidget>& NewFocusedWidget)
 {
 	if (!NewFocusedWidget.IsValid() || RefreshTicker.IsValid())
@@ -83,6 +116,7 @@ void URelayFocusSubsystem::HandleSlateFocusChanging(const FFocusEvent& FocusEven
 	RefreshTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateWeakLambda(this, [this](float)
 	{
 		RefreshTicker.Reset();
+		KeepFocusInActiveScreen();
 		RefreshRememberedFocus();
 		return false;
 	}));

@@ -20,6 +20,12 @@ namespace RelayUITags
 		return Tag;
 	}
 
+	const FGameplayTag& ScreenConfirm()
+	{
+		static const FGameplayTag Tag = FGameplayTag::RequestGameplayTag(TEXT("UI.Screen.Confirm"));
+		return Tag;
+	}
+
 	const TArray<FGameplayTag>& AllLayers()
 	{
 		static const TArray<FGameplayTag> Layers = { LayerHUD(), LayerMenu(), LayerModal() };

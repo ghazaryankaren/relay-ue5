@@ -6,6 +6,7 @@
 
 class UInputAction;
 class URelayUIRouterSubsystem;
+class URelayViewModelBase;
 
 /** Who receives input while the screen is on top. */
 UENUM(BlueprintType)
@@ -54,9 +55,18 @@ public:
 	 */
 	virtual bool HandleCloseRequest() { return true; }
 
+	/**
+	 * Called by the router before the screen activates, with the context passed to PushScreen or ReplaceScreen (often null).
+	 * A pooled screen gets it again on every show. Dialogs read their texts and report their answer through it.
+	 */
+	virtual void SetScreenContext(URelayViewModelBase* Context) {}
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual bool NativeOnHandleBackAction() override;
+
+	/** Keeps keyboard and gamepad navigation inside the screen: focus never moves to a screen below, for example from a dialog to the menu under it. */
+	virtual FNavigationReply NativeOnNavigation(const FGeometry& MyGeometry, const FNavigationEvent& InNavigationEvent, const FNavigationReply& InDefaultReply) override;
 
 	URelayUIRouterSubsystem* GetRouter() const;
 

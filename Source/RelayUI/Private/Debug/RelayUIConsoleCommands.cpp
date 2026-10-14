@@ -8,6 +8,7 @@
 #include "HAL/IConsoleManager.h"
 #include "RelayUILog.h"
 #include "Router/RelayUIRouterSubsystem.h"
+#include "Toast/RelayToastSubsystem.h"
 
 // Отладочные команды роутера: открыть или закрыть экран без кнопок, в PIE и в запуске игры без рендера
 namespace RelayUIConsoleCommands
@@ -60,6 +61,37 @@ namespace RelayUIConsoleCommands
 			{
 				Router.RequestCloseTopScreen(Tag);
 			});
+		}));
+
+	static FAutoConsoleCommandWithWorldAndArgs ToastCommand(
+		TEXT("Relay.UI.Toast"),
+		TEXT("Queues a toast for the first player. Run it several times to see the queue and the limit. Example: Relay.UI.Toast Hello"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			ULocalPlayer* LocalPlayer = World ? World->GetFirstLocalPlayerFromController() : nullptr;
+			if (URelayToastSubsystem* Toasts = ULocalPlayer::GetSubsystem<URelayToastSubsystem>(LocalPlayer))
+			{
+				static int32 ToastNumber = 0;
+				const FString Message = Args.Num() > 0 ? FString::Join(Args, TEXT(" ")) : FString::Printf(TEXT("Toast %d"), ++ToastNumber);
+				Toasts->ShowToast(FText::AsCultureInvariant(Message));
+			}
+		}));
+
+	// Тосты из консоли по одному не успевают встать в очередь: пока набираешь следующую команду, прошлый тост уже исчез
+	static FAutoConsoleCommandWithWorldAndArgs ToastBurstCommand(
+		TEXT("Relay.UI.ToastBurst"),
+		TEXT("Queues several toasts in one frame to show the visible limit and the queue. Example: Relay.UI.ToastBurst 6"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			ULocalPlayer* LocalPlayer = World ? World->GetFirstLocalPlayerFromController() : nullptr;
+			if (URelayToastSubsystem* Toasts = ULocalPlayer::GetSubsystem<URelayToastSubsystem>(LocalPlayer))
+			{
+				const int32 Count = Args.Num() > 0 ? FMath::Clamp(FCString::Atoi(*Args[0]), 1, 20) : 6;
+				for (int32 Index = 1; Index <= Count; ++Index)
+				{
+					Toasts->ShowToast(FText::AsCultureInvariant(FString::Printf(TEXT("Toast %d of %d"), Index, Count)));
+				}
+			}
 		}));
 }
 

@@ -10,6 +10,9 @@ namespace RelayUITags
 	RELAYUI_API const FGameplayTag& LayerMenu();
 	RELAYUI_API const FGameplayTag& LayerModal();
 
+	/** Confirmation dialog on the modal layer. Its context is a URelayConfirmViewModel. */
+	RELAYUI_API const FGameplayTag& ScreenConfirm();
+
 	/** All layers, bottom to top. */
 	RELAYUI_API const TArray<FGameplayTag>& AllLayers();
 

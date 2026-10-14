@@ -69,6 +69,21 @@ bool URelayScreen::NativeOnHandleBackAction()
 	return Super::NativeOnHandleBackAction();
 }
 
+FNavigationReply URelayScreen::NativeOnNavigation(const FGeometry& MyGeometry, const FNavigationEvent& InNavigationEvent, const FNavigationReply& InDefaultReply)
+{
+	const FNavigationReply Reply = Super::NativeOnNavigation(MyGeometry, InNavigationEvent, InDefaultReply);
+
+	// Навигация Slate геометрическая и про экраны CommonUI не знает: из диалога вниз фокус уходил на кнопку Back
+	// магазина под ним, и Back закрывал магазин из-под открытого диалога. Stop делает этот экран границей:
+	// Slate ищет следующий виджет только среди его потомков (обработчик ответа - этот экран, SlateApplication.cpp:3688)
+	if (Reply.GetBoundaryRule() == EUINavigationRule::Escape)
+	{
+		return FNavigationReply::Stop();
+	}
+
+	return Reply;
+}
+
 URelayUIRouterSubsystem* URelayScreen::GetRouter() const
 {
 	return ULocalPlayer::GetSubsystem<URelayUIRouterSubsystem>(GetOwningLocalPlayer());

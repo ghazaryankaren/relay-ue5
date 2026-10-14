@@ -2,6 +2,7 @@
 
 #include "Blueprint/UserWidget.h"
 #include "CommonInputModeTypes.h"
+#include "Debug/RelayUIDebug.h"
 #include "Engine/AssetManager.h"
 #include "Engine/DebugCameraController.h"
 #include "Engine/LocalPlayer.h"
@@ -63,14 +64,14 @@ void URelayUIRouterSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
-void URelayUIRouterSubsystem::PushScreen(FGameplayTag ScreenTag)
+void URelayUIRouterSubsystem::PushScreen(FGameplayTag ScreenTag, URelayViewModelBase* Context)
 {
-	OpenScreen(ScreenTag, EScreenOp::Push);
+	OpenScreen(ScreenTag, EScreenOp::Push, Context);
 }
 
-void URelayUIRouterSubsystem::ReplaceScreen(FGameplayTag ScreenTag)
+void URelayUIRouterSubsystem::ReplaceScreen(FGameplayTag ScreenTag, URelayViewModelBase* Context)
 {
-	OpenScreen(ScreenTag, EScreenOp::Replace);
+	OpenScreen(ScreenTag, EScreenOp::Replace, Context);
 }
 
 void URelayUIRouterSubsystem::RequestCloseScreen(URelayScreen& Screen)
@@ -97,6 +98,14 @@ void URelayUIRouterSubsystem::RequestCloseScreen(URelayScreen& Screen)
 		{
 			CancelPendingScreen(Layers[Index]);
 		}
+
+		// Уже открытые экраны слоёв выше закрываем тоже: диалог, который открыл этот экран, без него не нужен.
+		// Без этого диалог покупки оставался висеть над закрытым магазином. Закрываем без вопроса (HandleCloseRequest):
+		// экран под ними уже согласился закрыться
+		for (int32 Index = Layers.Num() - 1; Index > LayerIndex; --Index)
+		{
+			CloseAllScreensOnLayer(Layers[Index]);
+		}
 	}
 
 	// HUD - нижний экран, на который возвращается управление. Если он не открылся, после закрытия
@@ -109,6 +118,29 @@ void URelayUIRouterSubsystem::RequestCloseScreen(URelayScreen& Screen)
 	// Стек CommonUI снимает деактивированный верхний экран и активирует экран под ним
 	Screen.DeactivateWidget();
 	UE_LOG(LogRelayUI, Log, TEXT("Closed %s on %s."), *Screen.GetName(), *LayerTag.ToString());
+}
+
+void URelayUIRouterSubsystem::CloseAllScreensOnLayer(FGameplayTag LayerTag)
+{
+	UCommonActivatableWidgetContainerBase* Layer = RootLayout->FindLayer(LayerTag);
+	if (!Layer)
+	{
+		return;
+	}
+
+	// Верхний экран деактивируется, стек сразу снимает его (переходы выключены) и показывает следующий.
+	// Счётчик страхует от экрана, который не снимается со стека
+	for (int32 Guard = Layer->GetNumWidgets(); Guard > 0; --Guard)
+	{
+		UCommonActivatableWidget* Top = Layer->GetActiveWidget();
+		if (!Top)
+		{
+			break;
+		}
+
+		UE_LOG(LogRelayUI, Log, TEXT("Closing %s on %s together with the screen below."), *Top->GetName(), *LayerTag.ToString());
+		Top->DeactivateWidget();
+	}
 }
 
 void URelayUIRouterSubsystem::RequestCloseTopScreen(FGameplayTag LayerTag)
@@ -136,7 +168,12 @@ void URelayUIRouterSubsystem::RequestCloseTopScreen(FGameplayTag LayerTag)
 	}
 }
 
-void URelayUIRouterSubsystem::OpenScreen(FGameplayTag ScreenTag, EScreenOp Op)
+bool URelayUIRouterSubsystem::IsScreenOpen(const URelayScreen& Screen) const
+{
+	return RootLayout && RootLayout->FindLayerTagOf(Screen).IsValid();
+}
+
+void URelayUIRouterSubsystem::OpenScreen(FGameplayTag ScreenTag, EScreenOp Op, URelayViewModelBase* Context)
 {
 	// После выгрузки мира лейаут снят с экрана, но объект ещё жив до следующего контроллера:
 	// экран, добавленный в такой стек, потерялся бы без ошибки
@@ -168,10 +205,12 @@ void URelayUIRouterSubsystem::OpenScreen(FGameplayTag ScreenTag, EScreenOp Op)
 	// На слое не больше одного ожидающего экрана: новый запрос отменяет старый
 	CancelPendingScreen(Entry->Layer);
 
+	const double RequestTime = FPlatformTime::Seconds();
+
 	// Класс уже в памяти: открываем сразу. Колбэк загрузки пришёл бы только на следующем кадре
 	if (UClass* LoadedClass = Entry->WidgetClass.Get())
 	{
-		ShowScreen(ScreenTag, *Entry, LoadedClass, Op);
+		ShowScreen(ScreenTag, *Entry, LoadedClass, Op, Context, RequestTime);
 		return;
 	}
 
@@ -183,6 +222,8 @@ void URelayUIRouterSubsystem::OpenScreen(FGameplayTag ScreenTag, EScreenOp Op)
 	NewPending.ScreenTag = ScreenTag;
 	NewPending.Op = Op;
 	NewPending.RequestId = RequestId;
+	NewPending.RequestTime = RequestTime;
+	NewPending.Context.Reset(Context);
 
 	TSharedPtr<FStreamableHandle> Handle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
 		Entry->WidgetClass.ToSoftObjectPath(),
@@ -224,6 +265,10 @@ void URelayUIRouterSubsystem::OnScreenClassLoaded(FGameplayTag LayerTag, uint32 
 
 	const FGameplayTag ScreenTag = Pending->ScreenTag;
 	const EScreenOp Op = Pending->Op;
+	const double RequestTime = Pending->RequestTime;
+
+	// Контекст держим локально: запись удаляется сейчас, а экран получит контекст в ShowScreen
+	const TStrongObjectPtr<URelayViewModelBase> Context = Pending->Context;
 	PendingScreens.Remove(LayerTag);
 
 	if (!IsUIOnScreen())
@@ -239,10 +284,10 @@ void URelayUIRouterSubsystem::OnScreenClassLoaded(FGameplayTag LayerTag, uint32 
 		return;
 	}
 
-	ShowScreen(ScreenTag, *Entry, LoadedClass, Op);
+	ShowScreen(ScreenTag, *Entry, LoadedClass, Op, Context.Get(), RequestTime);
 }
 
-void URelayUIRouterSubsystem::ShowScreen(FGameplayTag ScreenTag, const FRelayScreenEntry& Entry, UClass* ScreenClass, EScreenOp Op)
+void URelayUIRouterSubsystem::ShowScreen(FGameplayTag ScreenTag, const FRelayScreenEntry& Entry, UClass* ScreenClass, EScreenOp Op, URelayViewModelBase* Context, double RequestTime)
 {
 	UCommonActivatableWidgetContainerBase* Layer = RootLayout->FindLayer(Entry.Layer);
 	if (!Layer)
@@ -264,7 +309,14 @@ void URelayUIRouterSubsystem::ShowScreen(FGameplayTag ScreenTag, const FRelayScr
 		}
 	}
 
-	URelayScreen* Screen = Layer->AddWidget<URelayScreen>(ScreenClass);
+	// Контекст передаём до активации: экран из пула сразу покажет новые данные, а не данные прошлого показа
+	const double ShowStartTime = FPlatformTime::Seconds();
+	URelayScreen* Screen = Layer->AddWidget<URelayScreen>(ScreenClass, [Context](URelayScreen& NewScreen)
+	{
+		NewScreen.SetScreenContext(Context);
+	});
+	const double ShowEndTime = FPlatformTime::Seconds();
+
 	if (!Screen)
 	{
 		UE_LOG(LogRelayUI, Error, TEXT("OpenScreen(%s): failed to create %s."), *ScreenTag.ToString(), *GetNameSafe(ScreenClass));
@@ -277,6 +329,11 @@ void URelayUIRouterSubsystem::ShowScreen(FGameplayTag ScreenTag, const FRelayScr
 	{
 		Layer->RemoveWidget(*ReplacedScreen);
 	}
+
+	FRelayUIStats& Stats = FRelayUIStats::Get();
+	Stats.LastScreen = ScreenTag;
+	Stats.LastScreenLoadMs = (ShowStartTime - RequestTime) * 1000.0;
+	Stats.LastScreenShowMs = (ShowEndTime - ShowStartTime) * 1000.0;
 
 	if (Op == EScreenOp::Replace)
 	{

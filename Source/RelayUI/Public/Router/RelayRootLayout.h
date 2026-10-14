@@ -7,12 +7,15 @@
 class UCommonActivatableWidget;
 class UCommonActivatableWidgetContainerBase;
 class UCommonActivatableWidgetStack;
+class URelayStatsOverlay;
+class URelayToastLayer;
 class URelayUIRouterSubsystem;
 
 /**
  * Root widget of one player's UI. Holds the layer stacks, and only the router can reach them.
  * The layout itself is not activatable, so every screen is its own CommonUI input root:
  * the topmost active screen in paint order gets input. Paint order is the order in the widget hierarchy.
+ * Above the stacks lie the toast layer, which never takes input, and the optional stats overlay.
  */
 UCLASS(Abstract, meta = (DisableNativeTick))
 class RELAYUI_API URelayRootLayout : public UCommonUserWidget
@@ -43,6 +46,14 @@ private:
 	/** Layer UI.Layer.Modal. Must be the top of the three. */
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonActivatableWidgetStack> ModalStack;
+
+	/** Toasts. Above ModalStack, so toasts stay visible over dialogs. */
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<URelayToastLayer> ToastLayer;
+
+	/** Optional debug overlay, shown with Relay.UI.ShowStats 1. Keep it on top. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<URelayStatsOverlay> StatsOverlay;
 
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, TObjectPtr<UCommonActivatableWidgetContainerBase>> Layers;
